@@ -1,12 +1,4 @@
 ! =============================================================================
-<<<<<<< HEAD
-! dMC-Route Forcing Configuration
-! =============================================================================
-! Format: <tag> value ! comment
-! This mirrors mizuRoute control file format for compatibility
-! =============================================================================
-
-=======
 ! dMC-Route Control File Template
 ! =============================================================================
 ! Usage: ./dmc_route_run -c config.txt
@@ -26,7 +18,6 @@
 ! <enable_gradients>    false                           ! true/false for AD gradients
 ! <dt_routing>          3600                            ! Routing timestep [seconds]
 
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
 ! --- RUNOFF VARIABLE ---
 <vname_qsim>            averageRoutedRunoff    ! Variable name for runoff in NetCDF
 <units_qsim>            m/s                     ! Units: m/s, m3/s, mm/h, mm/d
@@ -46,9 +37,6 @@
 <vname_area>                                    ! Area variable name (empty = from topology)
 
 ! =============================================================================
-<<<<<<< HEAD
-! PRESET CONFIGURATIONS
-=======
 ! USAGE EXAMPLES
 ! =============================================================================
 !
@@ -64,7 +52,6 @@
 !
 ! =============================================================================
 ! PRESET CONFIGURATIONS (alternative to config file)
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
 ! =============================================================================
 ! Instead of this file, you can use -p/--preset:
 !   -p summa  : averageRoutedRunoff [m/s], gru dimension

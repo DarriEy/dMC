@@ -37,8 +37,6 @@ namespace dmc {
  * - units_* = units specification
  */
 struct RunoffForcingConfig {
-<<<<<<< HEAD
-=======
     // === File paths (set via control file or command line) ===
     std::string network_file = "";        // <fname_ntopo>  topology.nc path
     std::string forcing_file = "";        // <fname_qsim>   runoff NetCDF path  
@@ -49,7 +47,6 @@ struct RunoffForcingConfig {
     bool enable_gradients = false;        // <enable_gradients> AD gradient computation
     double dt = 3600.0;                   // <dt_routing> Routing timestep [seconds]
     
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
     // === Runoff variable (the main input) ===
     std::string vname_qsim = "averageRoutedRunoff";  // Variable name for runoff
     std::string units_qsim = "m/s";                   // Units: "m/s", "m3/s", "mm/h", "mm/d"
@@ -239,10 +236,6 @@ inline RunoffForcingConfig RunoffForcingConfig::load_from_control_file(const std
         if (start == std::string::npos) continue;
         std::string value = rest.substr(start, end - start + 1);
         
-<<<<<<< HEAD
-        // Set config values
-        if (tag == "vname_qsim") cfg.vname_qsim = value;
-=======
         // Set config values - file paths
         if (tag == "fname_ntopo" || tag == "network_file") cfg.network_file = value;
         else if (tag == "fname_qsim" || tag == "forcing_file") cfg.forcing_file = value;
@@ -255,7 +248,6 @@ inline RunoffForcingConfig RunoffForcingConfig::load_from_control_file(const std
         
         // Runoff variable config
         else if (tag == "vname_qsim") cfg.vname_qsim = value;
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
         else if (tag == "units_qsim") cfg.units_qsim = value;
         else if (tag == "dt_qsim") cfg.dt_qsim = std::stod(value);
         else if (tag == "dname_time") cfg.dname_time = value;

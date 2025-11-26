@@ -35,20 +35,12 @@ void print_usage(const char* prog) {
               << "Options:\n"
               << "  -n, --network FILE     Network file (topology.nc, GeoJSON, or CSV)\n"
               << "  -f, --forcing FILE     Runoff forcing file (NetCDF or CSV)\n"
-<<<<<<< HEAD
-              << "  -c, --config FILE      Forcing configuration file (mizuRoute-style)\n"
-=======
               << "  -c, --config FILE      Control file (can specify all options)\n"
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
               << "  -p, --preset NAME      Use preset config: summa, fuse, gr4j\n"
               << "  -o, --output FILE      Output file for results (CSV)\n"
               << "  -t, --timestep SECS    Timestep in seconds (default: 3600)\n"
               << "  -g, --gradients        Enable gradient computation\n"
-<<<<<<< HEAD
-              << "  -j, --jacobian FILE    Output Jacobian matrix to FILE (requires -g)\n"
-=======
               << "  -j, --jacobian FILE    Output Jacobian matrix to FILE (enables -g)\n"
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
               << "  -d, --demo             Run built-in demo\n"
               << "  -h, --help             Show this help\n"
               << "\n"
@@ -56,12 +48,8 @@ void print_usage(const char* prog) {
               << "  " << prog << " --demo\n"
               << "  " << prog << " -n topology.nc -f summa_output.nc -p summa -o discharge.csv\n"
               << "  " << prog << " -n topology.nc -f fuse_output.nc -c forcing_config.txt\n"
-<<<<<<< HEAD
-              << "  " << prog << " -n topology.nc -f summa_output.nc -p summa -g -j jacobian.csv\n"
-=======
               << "  " << prog << " -c full_config.txt                 (all options in config)\n"
               << "  " << prog << " -c config.txt -j jacobian.csv      (config + CLI override)\n"
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
               << std::endl;
 }
 
@@ -636,8 +624,6 @@ int main(int argc, char* argv[]) {
     std::cout << "\n";
     
     try {
-<<<<<<< HEAD
-=======
         // If config file provided, load it and use values as defaults
         // Command line arguments override config file values
         if (!config_file.empty()) {
@@ -655,7 +641,6 @@ int main(int argc, char* argv[]) {
             if (!jacobian_file.empty()) enable_gradients = true;
         }
         
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
         if (!network_file.empty() && !forcing_file.empty()) {
             // Run from files
             run_from_files(network_file, forcing_file, config_file, preset,
@@ -664,17 +649,12 @@ int main(int argc, char* argv[]) {
             // Run built-in demo
             run_demo_simulation();
             run_bmi_demo();
-<<<<<<< HEAD
-        } else {
-            std::cerr << "Error: Must specify both --network and --forcing, or use --demo\n\n";
-=======
         } else if (!config_file.empty()) {
             std::cerr << "Error: Config file must specify <fname_ntopo> and <fname_qsim>\n\n";
             print_usage(argv[0]);
             return 1;
         } else {
             std::cerr << "Error: Must specify both --network and --forcing, or use --config, or use --demo\n\n";
->>>>>>> b5bae52 (Initial commit of dmc_design codebase)
             print_usage(argv[0]);
             return 1;
         }
