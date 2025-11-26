@@ -6,7 +6,7 @@ dMC is a C++ implementation of a differentiable Muskingum-Cunge channel-routing 
 
 - C++ implementation with clean modular structure (include / src / external)  
 - Build via CMake  
-- Optional NetCDF support (if compiled with `-DDMC_ENABLE_NETCDF=ON`)  
+- NetCDF support 
 - Example executables & test suite included  
 - GPL-3.0 license  
 
@@ -14,8 +14,7 @@ dMC is a C++ implementation of a differentiable Muskingum-Cunge channel-routing 
 
 - CMake (>= 3.15 recommended)  
 - A C++ compiler with C++17 support  
-- (Optional) NetCDF library (if using NetCDF I/O)  
-- Any additional dependencies (document here)  
+- NetCDF library 
 
 ## Build Instructions
 
