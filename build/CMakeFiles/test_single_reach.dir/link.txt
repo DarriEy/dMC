@@ -1,0 +1,1 @@
+/Library/Developer/CommandLineTools/usr/bin/c++  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX14.4.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/test_single_reach.dir/tests/test_single_reach.cpp.o -o test_single_reach  -Wl,-rpath,/opt/homebrew/lib /opt/homebrew/lib/libnetcdf.22.dylib 

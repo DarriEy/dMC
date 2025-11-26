@@ -1,0 +1,33 @@
+! =============================================================================
+! dMC-Route Forcing Configuration
+! =============================================================================
+! Format: <tag> value ! comment
+! This mirrors mizuRoute control file format for compatibility
+! =============================================================================
+
+! --- RUNOFF VARIABLE ---
+<vname_qsim>            averageRoutedRunoff    ! Variable name for runoff in NetCDF
+<units_qsim>            m/s                     ! Units: m/s, m3/s, mm/h, mm/d
+<dt_qsim>               3600                    ! Time interval of runoff [seconds]
+
+! --- TIME DIMENSION ---
+<dname_time>            time                    ! Dimension name for time
+<vname_time>            time                    ! Variable name for time
+
+! --- HRU/GRU DIMENSION ---
+<dname_hruid>           gru                     ! Dimension name: gru, hru, catchment
+<vname_hruid>           gruId                   ! Variable name for HRU/GRU IDs
+
+! --- OPTIONAL: AREA VARIABLE ---
+! If units are depth-based (m/s, mm/d), areas are needed.
+! Leave empty to use areas from topology.nc
+<vname_area>                                    ! Area variable name (empty = from topology)
+
+! =============================================================================
+! PRESET CONFIGURATIONS
+! =============================================================================
+! Instead of this file, you can use -p/--preset:
+!   -p summa  : averageRoutedRunoff [m/s], gru dimension
+!   -p fuse   : q_routed [mm/d], gru dimension
+!   -p gr4j   : q_routed [mm/d], gru dimension
+! =============================================================================
