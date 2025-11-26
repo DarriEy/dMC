@@ -1,0 +1,1 @@
+/Library/Developer/CommandLineTools/usr/bin/c++  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX14.4.sdk -dynamiclib -Wl,-headerpad_max_install_names -current_version 0.1.0 -o libdmc_route.0.1.0.dylib -install_name @rpath/libdmc_route.0.dylib CMakeFiles/dmc_route_shared.dir/src/lib.cpp.o  -Wl,-rpath,/opt/homebrew/lib /opt/homebrew/lib/libnetcdf.22.dylib 
