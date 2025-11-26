@@ -115,12 +115,21 @@ public:
     const std::unordered_map<int, double>& get_hru_areas() const {
         return hru_areas_;
     }
+    
+    /**
+     * Get Manning's n values indexed by segment ID.
+     * Returns empty if not read from file (defaults used).
+     */
+    const std::unordered_map<int, double>& get_manning_n() const {
+        return manning_n_values_;
+    }
 
 private:
     TopologyConfig config_;
     std::vector<HRUInfo> hru_info_;
     std::unordered_map<int, int> hru_to_segment_;
     std::unordered_map<int, double> hru_areas_;
+    std::unordered_map<int, double> manning_n_values_;  // Optional: from topology.nc
     
 #ifdef DMC_USE_NETCDF
     void read_netcdf(const std::string& filepath,
@@ -153,6 +162,25 @@ inline Network TopologyNCReader::load_network(const std::string& filepath) {
     
     read_netcdf(filepath, seg_ids, down_seg_ids, slopes, lengths,
                 hru_ids, hru_to_seg, areas);
+    
+    // Try to read optional mann_n variable
+    manning_n_values_.clear();
+    try {
+        int ncid;
+        if (nc_open(filepath.c_str(), NC_NOWRITE, &ncid) == NC_NOERR) {
+            int varid;
+            if (nc_inq_varid(ncid, "mann_n", &varid) == NC_NOERR) {
+                std::vector<double> mann_n(seg_ids.size());
+                nc_get_var_double(ncid, varid, mann_n.data());
+                for (size_t i = 0; i < seg_ids.size(); ++i) {
+                    manning_n_values_[seg_ids[i]] = mann_n[i];
+                }
+            }
+            nc_close(ncid);
+        }
+    } catch (...) {
+        // Ignore errors - use defaults
+    }
     
     // Store HRU information for forcing mapping
     hru_info_.clear();
@@ -318,7 +346,14 @@ inline Network TopologyNCReader::build_network(
         r.name = "seg_" + std::to_string(seg_ids[i]);
         r.length = std::max(lengths[i], config_.min_length);
         r.slope = std::max(slopes[i], config_.min_slope);
-        r.manning_n = Real(config_.default_manning_n);
+        
+        // Use Manning's n from file if available, otherwise use default
+        auto it = manning_n_values_.find(seg_ids[i]);
+        if (it != manning_n_values_.end()) {
+            r.manning_n = Real(it->second);
+        } else {
+            r.manning_n = Real(config_.default_manning_n);
+        }
         
         // Set default channel geometry
         r.geometry.width_coef = Real(config_.default_width_coef);
