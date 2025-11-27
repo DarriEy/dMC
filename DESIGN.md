@@ -135,9 +135,7 @@ struct Reach {
     // Learnable parameters (AD types)
     Real manning_n;
     Real width_coef;         // W = a·Q^b (coefficient a)
-    Real width_exp;          // W = a·Q^b (exponent b)
     Real depth_coef;         // D = c·Q^d (coefficient c)
-    Real depth_exp;          // D = c·Q^d (exponent d)
 };
 
 struct Junction {
