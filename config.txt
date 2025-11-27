@@ -13,6 +13,7 @@
 ! --- SIMULATION OPTIONS ---
 <enable_gradients>      true
 <dt_routing>            3600
+<routing_method>        lag   ! options: muskingum, irf, diffusive, lag, kwt
 
 ! --- RUNOFF VARIABLE (SUMMA) ---
 <vname_qsim>            averageRoutedRunoff

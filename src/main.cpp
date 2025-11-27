@@ -23,10 +23,11 @@ using namespace dmc;
 
 void print_banner() {
     std::cout << R"(
-╔═══════════════════════════════════════════════════════════════╗
-║  dMC-Route: Differentiable Muskingum-Cunge Routing v0.1.0     ║
-║  Automatic differentiation for hydrological parameter learning║
-╚═══════════════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════════════════════════╗
+║  dMC-Route: Differentiable Routing v0.3.0                           ║
+║  5 methods: Muskingum-Cunge, IRF, Diffusive Wave, Lag, KWT          ║
+║  Gradient support: MC (full AD), IRF/DW/Lag (analytical manning_n)  ║
+╚═════════════════════════════════════════════════════════════════════╝
 )" << std::endl;
 }
 
@@ -38,18 +39,27 @@ void print_usage(const char* prog) {
               << "  -c, --config FILE      Control file (can specify all options)\n"
               << "  -p, --preset NAME      Use preset config: summa, fuse, gr4j\n"
               << "  -o, --output FILE      Output file for results (CSV)\n"
+              << "  -r, --routing METHOD   Routing method (see below)\n"
+              << "  -m, --manning-n FILE   CSV file with Manning's n overrides (reach_id,manning_n)\n"
               << "  -t, --timestep SECS    Timestep in seconds (default: 3600)\n"
               << "  -g, --gradients        Enable gradient computation\n"
               << "  -j, --jacobian FILE    Output Jacobian matrix to FILE (enables -g)\n"
               << "  -d, --demo             Run built-in demo\n"
               << "  -h, --help             Show this help\n"
               << "\n"
+              << "Routing methods (-r):\n"
+              << "  muskingum   Muskingum-Cunge diffusive wave (default) [differentiable]\n"
+              << "  irf         Impulse Response Function, gamma UH     [differentiable]\n"
+              << "  diffusive   Full diffusive wave equation            [differentiable]\n"
+              << "  lag         Simple lag/delay routing                [differentiable]\n"
+              << "  kwt         Kinematic Wave Tracking (mizuRoute)     [NOT differentiable]\n"
+              << "\n"
               << "Examples:\n"
               << "  " << prog << " --demo\n"
               << "  " << prog << " -n topology.nc -f summa_output.nc -p summa -o discharge.csv\n"
-              << "  " << prog << " -n topology.nc -f fuse_output.nc -c forcing_config.txt\n"
-              << "  " << prog << " -c full_config.txt                 (all options in config)\n"
-              << "  " << prog << " -c config.txt -j jacobian.csv      (config + CLI override)\n"
+              << "  " << prog << " -n topology.nc -f summa_output.nc -r irf -o discharge.csv\n"
+              << "  " << prog << " -c config.txt -r diffusive -j jacobian.csv\n"
+              << "  " << prog << " -c config.txt -m params.csv -j jacobian.csv  (calibration)\n"
               << std::endl;
 }
 
@@ -62,6 +72,8 @@ void run_from_files(const std::string& network_file,
                     const std::string& preset,
                     const std::string& output_file,
                     const std::string& jacobian_file,
+                    const std::string& manning_n_file,
+                    const std::string& routing_method,
                     double dt_override,
                     bool enable_gradients) {
     
@@ -104,6 +116,50 @@ void run_from_files(const std::string& network_file,
         }
         std::cout << "  Loaded " << network.num_reaches() << " reaches, "
                   << network.num_junctions() << " junctions\n";
+    }
+    
+    // Load Manning's n overrides from CSV if provided
+    if (!manning_n_file.empty()) {
+        std::cout << "Loading Manning's n from: " << manning_n_file << "\n";
+        std::ifstream manning_file(manning_n_file);
+        if (!manning_file.is_open()) {
+            throw std::runtime_error("Cannot open Manning's n file: " + manning_n_file);
+        }
+        
+        std::string line;
+        bool header = true;
+        int count = 0;
+        
+        while (std::getline(manning_file, line)) {
+            if (line.empty()) continue;
+            
+            // Skip header
+            if (header) {
+                header = false;
+                if (line.find("reach_id") != std::string::npos || 
+                    line.find("id") != std::string::npos) {
+                    continue;
+                }
+            }
+            
+            // Parse: reach_id,manning_n
+            std::stringstream ss(line);
+            std::string token;
+            std::getline(ss, token, ',');
+            int reach_id = std::stoi(token);
+            std::getline(ss, token, ',');
+            double manning_n = std::stod(token);
+            
+            // Update reach
+            try {
+                Reach& reach = network.get_reach(reach_id);
+                reach.manning_n = Real(manning_n);
+                count++;
+            } catch (...) {
+                // Reach not found, skip
+            }
+        }
+        std::cout << "  Updated Manning's n for " << count << " reaches\n";
     }
     
     // Load forcing configuration
@@ -207,19 +263,14 @@ void run_from_files(const std::string& network_file,
         return;
     }
     
-    // Setup router
+    // Setup router config
     RouterConfig router_config;
     router_config.dt = dt;
     router_config.enable_gradients = enable_gradients && AD_ENABLED;
     
-    MuskingumCungeRouter router(network, router_config);
-    
-    std::cout << "\nRunning " << forcing_data.num_timesteps() 
+    std::cout << "\nRouting method: " << routing_method << "\n";
+    std::cout << "Running " << forcing_data.num_timesteps() 
               << " timesteps (dt=" << dt << "s)...\n";
-    
-    if (router_config.enable_gradients) {
-        router.start_recording();
-    }
     
     // Open output file
     std::ofstream outfile;
@@ -232,105 +283,160 @@ void run_from_files(const std::string& network_file,
         outfile << "\n";
     }
     
-    // Run simulation
+    // Run simulation with appropriate router
     size_t num_timesteps = forcing_data.num_timesteps();
     size_t print_interval = std::max(size_t(1), num_timesteps / 10);
     
-    for (size_t t = 0; t < num_timesteps; ++t) {
-        // Set lateral inflows
-        for (int reach_id : network.topological_order()) {
-            double inflow = forcing_data.get_inflow(reach_id, t);
-            router.set_lateral_inflow(reach_id, inflow);
-        }
-        
-        // Route
-        router.route_timestep();
-        
-        // Write output
-        if (outfile.is_open()) {
-            double time_val = (t < forcing_data.times.size()) ? forcing_data.times[t] : t * dt;
-            outfile << time_val;
-            for (int reach_id : network.topological_order()) {
-                outfile << "," << router.get_discharge(reach_id);
-            }
-            outfile << "\n";
-        }
-        
-        // Progress
-        if (t % print_interval == 0) {
-            double progress = 100.0 * t / num_timesteps;
-            std::cout << "  Progress: " << std::fixed << std::setprecision(0) 
-                      << progress << "%\r" << std::flush;
+    std::unordered_map<std::string, double> grads;
+    std::vector<int> outlets;
+    
+    // Find outlets first
+    for (int reach_id : network.topological_order()) {
+        const Reach& r = network.get_reach(reach_id);
+        if (r.downstream_junction_id < 0) {
+            outlets.push_back(reach_id);
         }
     }
     
-    std::cout << "  Progress: 100%    \n";
-    
-    if (router_config.enable_gradients) {
-        router.stop_recording();
+    // Lambda for the simulation loop (shared by all routers)
+    auto run_simulation = [&](auto& router) {
+        if (router_config.enable_gradients) {
+            router.start_recording();
+        }
         
-        // Find outlets and compute gradients
-        std::vector<int> outlets;
-        for (int reach_id : network.topological_order()) {
-            const Reach& r = network.get_reach(reach_id);
-            if (r.downstream_junction_id < 0) {
-                outlets.push_back(reach_id);
+        for (size_t t = 0; t < num_timesteps; ++t) {
+            // Set lateral inflows
+            for (int reach_id : network.topological_order()) {
+                double inflow = forcing_data.get_inflow(reach_id, t);
+                router.set_lateral_inflow(reach_id, inflow);
+            }
+            
+            // Route
+            router.route_timestep();
+            
+            // Write output
+            if (outfile.is_open()) {
+                double time_val = (t < forcing_data.times.size()) ? forcing_data.times[t] : t * dt;
+                outfile << time_val;
+                for (int reach_id : network.topological_order()) {
+                    outfile << "," << router.get_discharge(reach_id);
+                }
+                outfile << "\n";
+            }
+            
+            // Progress
+            if (t % print_interval == 0) {
+                double progress = 100.0 * t / num_timesteps;
+                std::cout << "  Progress: " << std::fixed << std::setprecision(0) 
+                          << progress << "%\r" << std::flush;
             }
         }
         
-        if (!outlets.empty()) {
-            std::vector<double> dL_dQ(outlets.size(), 1.0);
-            router.compute_gradients(outlets, dL_dQ);
+        std::cout << "  Progress: 100%    \n";
+        
+        if (router_config.enable_gradients) {
+            router.stop_recording();
             
-            auto grads = router.get_gradients();
+            if (!outlets.empty()) {
+                std::vector<double> dL_dQ(outlets.size(), 1.0);
+                router.compute_gradients(outlets, dL_dQ);
+                grads = router.get_gradients();
+            }
+        }
+    };
+    
+    // Create and run appropriate router
+    std::cout << "Routing method: " << routing_method << "\n";
+    
+    if (routing_method == "irf" || routing_method == "impulse-response") {
+        IRFRouter router(network, router_config);
+        run_simulation(router);
+    } else if (routing_method == "diffusive" || routing_method == "diffusive-wave" || routing_method == "dw") {
+        DiffusiveWaveRouter router(network, router_config);
+        run_simulation(router);
+    } else if (routing_method == "lag" || routing_method == "delay") {
+        LagRouter router(network, router_config);
+        run_simulation(router);
+    } else if (routing_method == "kwt" || routing_method == "kinematic-wave") {
+        std::cout << "Note: KWT does not support gradient computation\n";
+        KWTRouter router(network, router_config);
+        run_simulation(router);
+    } else {
+        // Default: Muskingum-Cunge
+        MuskingumCungeRouter router(network, router_config);
+        run_simulation(router);
+    }
+    
+    // Print and save gradients
+    if (router_config.enable_gradients && !grads.empty()) {
+        // Print summary to console
+        std::cout << "\n=== Parameter Gradients (∂Q_outlet/∂θ) ===\n";
+        std::cout << "Outlet reach(es): ";
+        for (int o : outlets) std::cout << o << " ";
+        std::cout << "\n\n";
+        
+        for (int reach_id : network.topological_order()) {
+            std::string key_n = "manning_n_" + std::to_string(reach_id);
+            std::string prefix = "reach_" + std::to_string(reach_id) + "_";
             
-            // Print summary to console
-            std::cout << "\n=== Parameter Gradients (∂Q_outlet/∂θ) ===\n";
-            std::cout << "Outlet reach(es): ";
-            for (int o : outlets) std::cout << o << " ";
-            std::cout << "\n\n";
+            double grad_n = 0.0;
+            double grad_w = 0.0;
+            double grad_d = 0.0;
             
-            for (int reach_id : network.topological_order()) {
-                std::string prefix = "reach_" + std::to_string(reach_id) + "_";
-                double grad_n = grads[prefix + "manning_n"];
-                double grad_w = grads[prefix + "width_coef"];
-                
-                // Only print non-zero gradients
-                if (std::abs(grad_n) > 1e-15 || std::abs(grad_w) > 1e-15) {
-                    std::cout << "Reach " << std::setw(3) << reach_id << ": ";
-                    std::cout << "∂Q/∂n = " << std::setw(12) << std::scientific << grad_n;
-                    std::cout << ", ∂Q/∂w = " << std::setw(12) << grad_w;
-                    std::cout << "\n";
-                }
+            // Try both naming conventions
+            if (grads.count(key_n)) {
+                grad_n = grads[key_n];
+            } else if (grads.count(prefix + "manning_n")) {
+                grad_n = grads[prefix + "manning_n"];
+            }
+            if (grads.count(prefix + "width_coef")) {
+                grad_w = grads[prefix + "width_coef"];
+            }
+            if (grads.count(prefix + "depth_coef")) {
+                grad_d = grads[prefix + "depth_coef"];
             }
             
-            // Write Jacobian to file if requested
-            if (!jacobian_file.empty()) {
-                std::ofstream jac_file(jacobian_file);
-                if (jac_file.is_open()) {
-                    // Header
-                    jac_file << "reach_id,manning_n,width_coef,width_exp,depth_coef,depth_exp\n";
+            // Only print non-zero gradients
+            if (std::abs(grad_n) > 1e-15 || std::abs(grad_w) > 1e-15 || std::abs(grad_d) > 1e-15) {
+                std::cout << "Reach " << std::setw(3) << reach_id << ": ";
+                std::cout << "∂Q/∂n = " << std::setw(12) << std::scientific << grad_n;
+                std::cout << ", ∂Q/∂w = " << std::setw(12) << grad_w;
+                std::cout << ", ∂Q/∂d = " << std::setw(12) << grad_d;
+                std::cout << "\n";
+            }
+        }
+        
+        // Write Jacobian to file if requested
+        if (!jacobian_file.empty()) {
+            std::ofstream jac_file(jacobian_file);
+            if (jac_file.is_open()) {
+                // Header - simplified to 3 key parameters
+                jac_file << "reach_id,manning_n,width_coef,depth_coef\n";
+                
+                // Data rows
+                for (int reach_id : network.topological_order()) {
+                    std::string key_n = "manning_n_" + std::to_string(reach_id);
+                    std::string prefix = "reach_" + std::to_string(reach_id) + "_";
                     
-                    // Data rows
-                    for (int reach_id : network.topological_order()) {
-                        std::string prefix = "reach_" + std::to_string(reach_id) + "_";
-                        jac_file << reach_id;
-                        jac_file << "," << std::scientific << std::setprecision(10) << grads[prefix + "manning_n"];
-                        jac_file << "," << grads[prefix + "width_coef"];
-                        jac_file << "," << grads[prefix + "width_exp"];
-                        jac_file << "," << grads[prefix + "depth_coef"];
-                        jac_file << "," << grads[prefix + "depth_exp"];
-                        jac_file << "\n";
+                    double grad_manning = 0.0;
+                    if (grads.count(key_n)) {
+                        grad_manning = grads[key_n];
+                    } else if (grads.count(prefix + "manning_n")) {
+                        grad_manning = grads[prefix + "manning_n"];
                     }
                     
-                    jac_file.close();
-                    std::cout << "\nJacobian written to: " << jacobian_file << "\n";
-                } else {
-                    std::cerr << "Warning: Could not open Jacobian file: " << jacobian_file << "\n";
+                    jac_file << reach_id;
+                    jac_file << "," << std::scientific << std::setprecision(10) << grad_manning;
+                    jac_file << "," << (grads.count(prefix + "width_coef") ? grads[prefix + "width_coef"] : 0.0);
+                    jac_file << "," << (grads.count(prefix + "depth_coef") ? grads[prefix + "depth_coef"] : 0.0);
+                    jac_file << "\n";
                 }
+                
+                jac_file.close();
+                std::cout << "\nJacobian written to: " << jacobian_file << "\n";
+            } else {
+                std::cerr << "Warning: Could not open Jacobian file: " << jacobian_file << "\n";
             }
-        } else {
-            std::cout << "Warning: No outlet reaches found - cannot compute gradients\n";
         }
     }
     
@@ -576,6 +682,8 @@ int main(int argc, char* argv[]) {
     std::string preset;
     std::string output_file;
     std::string jacobian_file;
+    std::string manning_n_file;  // NEW: CSV file with reach_id,manning_n
+    std::string routing_method = "muskingum";  // NEW: routing method
     double dt_override = -1;
     bool enable_gradients = false;
     bool run_demo = false;
@@ -587,6 +695,8 @@ int main(int argc, char* argv[]) {
         {"preset",    required_argument, 0, 'p'},
         {"output",    required_argument, 0, 'o'},
         {"jacobian",  required_argument, 0, 'j'},
+        {"manning-n", required_argument, 0, 'm'},  // NEW
+        {"routing",   required_argument, 0, 'r'},  // NEW
         {"timestep",  required_argument, 0, 't'},
         {"gradients", no_argument,       0, 'g'},
         {"demo",      no_argument,       0, 'd'},
@@ -595,7 +705,7 @@ int main(int argc, char* argv[]) {
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "n:f:c:p:o:j:t:gdh", long_options, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "n:f:c:p:o:j:m:r:t:gdh", long_options, nullptr)) != -1) {
         switch (opt) {
             case 'n': network_file = optarg; break;
             case 'f': forcing_file = optarg; break;
@@ -603,6 +713,8 @@ int main(int argc, char* argv[]) {
             case 'p': preset = optarg; break;
             case 'o': output_file = optarg; break;
             case 'j': jacobian_file = optarg; enable_gradients = true; break;
+            case 'm': manning_n_file = optarg; break;  // NEW
+            case 'r': routing_method = optarg; break;  // NEW
             case 't': dt_override = std::stod(optarg); break;
             case 'g': enable_gradients = true; break;
             case 'd': run_demo = true; break;
@@ -636,6 +748,9 @@ int main(int argc, char* argv[]) {
             if (jacobian_file.empty()) jacobian_file = cfg.jacobian_file;
             if (!enable_gradients) enable_gradients = cfg.enable_gradients;
             if (dt_override < 0 && cfg.dt > 0) dt_override = cfg.dt;
+            if (routing_method == "muskingum" && !cfg.routing_method.empty()) {
+                routing_method = cfg.routing_method;
+            }
             
             // Enable gradients if jacobian file specified in config
             if (!jacobian_file.empty()) enable_gradients = true;
@@ -644,7 +759,8 @@ int main(int argc, char* argv[]) {
         if (!network_file.empty() && !forcing_file.empty()) {
             // Run from files
             run_from_files(network_file, forcing_file, config_file, preset,
-                          output_file, jacobian_file, dt_override, enable_gradients);
+                          output_file, jacobian_file, manning_n_file, routing_method,
+                          dt_override, enable_gradients);
         } else if (run_demo || argc == 1) {
             // Run built-in demo
             run_demo_simulation();

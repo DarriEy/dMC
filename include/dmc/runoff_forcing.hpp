@@ -46,6 +46,7 @@ struct RunoffForcingConfig {
     // === Simulation options ===
     bool enable_gradients = false;        // <enable_gradients> AD gradient computation
     double dt = 3600.0;                   // <dt_routing> Routing timestep [seconds]
+    std::string routing_method = "muskingum";  // <routing_method> muskingum, irf, kwt
     
     // === Runoff variable (the main input) ===
     std::string vname_qsim = "averageRoutedRunoff";  // Variable name for runoff
@@ -245,6 +246,7 @@ inline RunoffForcingConfig RunoffForcingConfig::load_from_control_file(const std
         // Simulation options
         else if (tag == "enable_gradients") cfg.enable_gradients = (value == "true" || value == "yes" || value == "1");
         else if (tag == "dt_routing" || tag == "dt") cfg.dt = std::stod(value);
+        else if (tag == "routing_method") cfg.routing_method = value;
         
         // Runoff variable config
         else if (tag == "vname_qsim") cfg.vname_qsim = value;
